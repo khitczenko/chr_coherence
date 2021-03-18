@@ -1,8 +1,8 @@
 # python3 get_td_scores.py --MODEL --contentwords --ds --analyze/--freq/--shuffle
 
-# TODO: in data_io, make sure that all of the word vectors are long enough (as done for glove)
+# Adapted from Arora et al. (2016):
+# Arora, S., Liang, Y., & Ma, T. (2016). A simple but tough-to-beat baseline for sentence embeddings.
 
-# Adapted from github sent to me by Dan Iter, which is by someone else
 import sys
 import csv
 import sent2vec
@@ -59,7 +59,6 @@ if sys.argv[1] not in ['--sent2vec']:
 ####################################
 
 # Load word weights (if TFIDF and SIF are one of the sentence embeddings)
-# TODO: right now these are identical?
 # word2weight['str'] is the weight for the word 'str'
 # weight4ind[i] is the weight for the i-th word (where i is defined by words['str'])
 if sif:
@@ -80,7 +79,6 @@ print("SIF/TFIDF word weights complete")
 # data_dir = 'data/' + ds + '_cleaned_tokenized'
 
 # Then get sentences
-# TODO: sentences is a dictionary here, but in what follows it's a list of strings, I believe
 # sentences: dictionary where sentences['3026_b0_unusual.txt'] = a list where each element is one sentence of the text in that file
 # parts: list of files that we'll be looking at (Note: '3026_b0_unusual_q.txt' is not in this list)
 # ds: Which folder should we read from (in main text, this is nar_mainqonly)
@@ -90,36 +88,13 @@ sentences, parts = data_io.getSentences(ds, q = 'nar' in ds)
 # sentences, parts = data_io.getSentences(data_dir, q)
 print("Sentences obtained")
 
-# TODO: DELETE
-# max_len = 0
-# for part in parts: 
-# 	sents = sentences[data_io.question(part)] + sentences[part]
-# 	for sent in sents:
-# 		input_ids = tokenizer.encode(sent, add_special_tokens = True)
-# 		max_len = max(max_len, len(input_ids))
-# print("Max sentence length: ", max_len)
-# exit()
-
 out = []
-
-# if len(sys.argv) == 5 and sys.argv[4] == '--analyze':
-# 	analyze = []
-# 	wordfreq = []
-# 	word2freq = data_io.getWordWeight('weightdata/enwiki_vocab_min200.txt', 'freq', 1.0)
-# 	ind2freq = data_io.getWeight(words, word2freq)
-# if len(sys.argv) == 5 and sys.argv[4] == '--freq':
-# 	wordfreq = []
-# 	word2freq = data_io.getWordWeight('weightdata/enwiki_vocab_min200.txt', 'freq', 1.0)
-# 	ind2freq = data_io.getWeight(words, word2freq)
-# 	# TODO: should I make the frequency of a word that hasn't occured lower?
-
 
 for ii in range(0, nIter):
 	print('Iteration: ' + str(ii))
 	for part in parts:
 		n = len(sentences[data_io.question(part)])
 		
-		## TODO: Check ELMo!!!
 		# # For ELMo:
 		# final arg determines which of three elmo layers is used (or if mean): 
 		# options: '1', '2', '3', 'all' ('all' = mean)
@@ -132,51 +107,21 @@ for ii in range(0, nIter):
 		if sys.argv[1] not in ['--sent2vec']:
 			x, m = data_io.sentences2idx(sentences[data_io.question(part)] + sentences[part], words)
 			if len(sys.argv) == 5 and sys.argv[4] == '--shuffle':
-				# x = data_io.randomizewords(x, m, len(words))
 				x = data_io.randomizewords(x, m, words)
-				# print("Words randomized")
 
 			# Get mean embeddings + coherence, derailment
 			if mean:
-				# embedding = sent_embeddings.unweighted_mean(We, x, m, sys.argv[1] == '--elmo')
-				# TODO: fix unweighted_mean function!!!
-				# embedding = sent_embeddings.get_weighted_average(We, x, m, sys.argv[1] == '--elmo')
 				embedding = sent_embeddings.get_weighted_average(We, x, m, sys.argv[1] == '--elmo')
 				mean_out.append(td_measures.get_scores(part, embedding, n) + [ii])
 
 			# Get only content word embeddings + coherence, derailment
 			if pos:
-				# TODO: check get_weighted_average!!!
 				w_pos = data_io.getPOSWeights(sentences[data_io.question(part)] + sentences[part], x)
 				embedding = sent_embeddings.get_weighted_average(We, x, w_pos, sys.argv[1] == '--elmo')
 				pos_out.append(td_measures.get_scores(part, embedding, n) + [ii])
-				# Check if we have an analyze option, meaning we want sentence by sentence predictions
-				# if len(sys.argv) == 5 and sys.argv[4] == '--analyze':
-				# 	analyze = analyze + td_measures.getSentbySent(part, embedding, sentences[part], n, x, w_pos, ind2freq)
-				# if len(sys.argv) == 5 and sys.argv[4] == '--freq':
-				# 	wordfreq = wordfreq + data_io.getWordFreqs(x, w_pos, ind2freq, part, n)
 
 			# Get SIF embeddings + coherence, derailment
 			if sif:
-				# print(part)
-				# for item in words:
-				# 	idx = words[item]
-				# 	if idx not in weight4ind_sif:
-				# 		print(part)
-				# 		print(words)
-				# 		print(idx)
-				# print("got here successfully")
-				# wklejrkwerjwer
-
-				# for i in range(x.shape[0]):
-				# 	for j in range(x.shape[1]):
-				# 		if m[i,j] > 0 and x[i,j] >= 0:
-				# 			if x[i,j] not in weight4ind_sif:
-				# 				print(x[i,j])
-				# 				print(m[i,j])
-				# 				print(x[i,j] in words.values())
-
-
 				w_sif = data_io.seq2weight(x, m, weight4ind_sif) # get word weights	
 				# embedding[i,:] is the embedding for sentence i in this part's passage
 				embedding = sent_embeddings.SIF(We, x, w_sif, sys.argv[1] == '--elmo')
@@ -190,7 +135,6 @@ for ii in range(0, nIter):
 
 		# Get sentence embeddings for sent2vec
 		else: 
-			# Get sent2vec embedding
 			s2v_model = sent2vec.Sent2vecModel()
 			s2v_model.load_model('vectors/sent2vec.wiki.bigrams.bin')
 			embedding = s2v_model.embed_sentences(sentences[data_io.question(part)] + sentences[part])
@@ -200,8 +144,3 @@ for ii in range(0, nIter):
 allmodels = [('mean', mean_out), ('sif', sif_out), ('tfidf', tfidf_out), ('pos', pos_out), ('s2v', s2v_out)]
 for m in allmodels:
 	data_io.write2file(m[1], sys.argv[1][2:], m[0], ds, shuffle)
-
-# if len(sys.argv) == 5 and sys.argv[4] == '--analyze':
-# 	data_io.analysis2file(analyze, sys.argv[1][2:], 'pos', ds)
-# if len(sys.argv) == 5 and sys.argv[4] == '--freq':
-# 	data_io.wordfreq2file(wordfreq, sys.argv[1][2:], 'pos', ds)
