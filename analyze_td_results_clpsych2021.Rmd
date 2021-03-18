@@ -1,0 +1,257 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(knitr)
+library(ggplot2)
+library(plotrix)
+library(kableExtra)
+library(gridExtra)
+```
+
+### Question 1: Group Differences?
+
+```{r}
+get_group_differences <- function(f, to_be_table, measure) {
+  data <- read.delim(f,sep=",")
+  # Extract information from file name
+  stripped = strsplit(f,'_')[[1]]
+  word = stripped[length(stripped)-1]
+  sentence = strsplit(stripped[length(stripped)],'.c')[[1]][1]
+
+  # Get mean and standard deviation by group (chr vs hc)
+  data <- data %>% filter(data[[measure]] < 998.0)
+  data <- reshape(data, idvar=c("Participant", "Time", "Group"), timevar = "Question", direction="wide")
+  
+  if (measure == 'Coherence') {
+    data$measure.avg <- rowMeans(data[,c("Coherence.challenge", "Coherence.selfdefining", "Coherence.turningpoint", "Coherence.unusual")], na.rm=TRUE)
+  } else {
+    data$measure.avg <- rowMeans(data[,c("Derailment.challenge", "Derailment.selfdefining", "Derailment.turningpoint", "Derailment.unusual")], na.rm=TRUE)
+  }
+  chr <- subset(data, Group == 'chr')
+  hc <- subset(data, Group == 'hc')
+
+  tt <- t.test(chr$measure.avg, hc$measure.avg, alternative = "less")
+  tstat <- tt$statistic
+  pvalue <- tt$p.value
+  
+  # Add all information to table and return 
+  to_be_table[nrow(to_be_table)+1,] = c(word, sentence, round(mean(chr$measure.avg), digits = 3), round(mean(hc$measure.avg), digits = 3), round(sd(chr$measure.avg), digits = 2), round(sd(hc$measure.avg), digits = 2), round(tstat, digits = 2), round(pvalue, digits = 3))
+  return(to_be_table)
+}
+```
+
+
+```{r}
+file_path = "/Users/khit/Box Sync/Postdoc/Research/narratives_clean/results/nar_mainqonlynofillers"
+files <- list.files(path=file_path, pattern="*.csv", full.names=TRUE, recursive=FALSE)
+# print(files)
+# setwd(file_path)
+
+basetable <- setNames(data.frame(matrix(ncol = 8, nrow = 0)), c("word", "sentence", "CHR mean", "HC mean", "CHR std", "HC std", "t-statistic", "p-value"))
+
+# Get coherence table
+coh <- lapply(files, get_group_differences, to_be_table = basetable, measure = 'Coherence')
+coherence_table <- do.call(rbind, coh)
+kable(coherence_table, caption = "Coherence = on average how similar are neighboring sentences")
+
+# Get derailment table (referred to as "tangentiality" in the paper)
+der <- lapply(files, get_group_differences, to_be_table = basetable, measure = 'Derailment')
+derailment_table <- do.call(rbind, der)
+kable(derailment_table, caption = "Derailment = slope of progressive coherence scores")
+```
+
+
+```{r}
+# Read in one file
+data <- read.delim("/Users/khit/Box Sync/Postdoc/Research/narratives_clean/results/nar_mainqonlynofillers/nar_mainqonlynofillers_glove_pos.csv",sep=",")
+partinfo <- read.delim("/Users/khit/Box Sync/Postdoc/Research/narratives_clean/symps+demo/clpsych2021_part_info.csv",sep=",")
+names(data)[names(data) == 'Coherence'] <- 'coh'
+data$Derailment <- NULL
+data$Tangentiality <- NULL
+data$Iteration <- NULL
+data <- reshape(data, idvar=c("Participant", "Time", "Group"), timevar = "Question", direction="wide")
+data$coh.avg <- rowMeans(data[,c("coh.challenge", "coh.selfdefining", "coh.turningpoint", "coh.unusual")], na.rm=TRUE)
+data <- merge(data, partinfo, by=c("Participant", "Time", "Group"))
+```
+
+```{r}
+# Plot group differences CHR vs. HC
+p <- ggplot(data,aes(x=coh.avg,color=Group)) + geom_density()
+p <- ggplot(data, aes(x=Group, y=coh.avg, color=Group)) + geom_violin() + geom_jitter(shape=16, position=position_jitter(0.2)) + ylab("Mean Coherence")
+p
+```
+
+### Question 2: Correlations with Symptoms?
+
+```{r, include = FALSE}
+chrdata <- subset(data, Group == 'chr')
+
+# p5corr
+p5corr <- ggplot(chrdata, aes(x=sips.p5, y=coh.avg)) + geom_point() + xlab("SIPS P5: Disorganized Communication") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+# p5corr
+round(cor.test(chrdata$sips.p5, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.p5, chrdata$coh.avg)$p.value, digits=3)
+
+# n5 corr
+n5corr <- ggplot(chrdata, aes(x=sips.n5, y=coh.avg)) + geom_point() + xlab("SIPS N5: Ideational Richness") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+round(cor.test(chrdata$sips.n5, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.n5, chrdata$coh.avg)$p.value, digits=3)
+
+# d2 corr
+d2corr <- ggplot(subset(chrdata, sips.d2 < 998.0), aes(x=sips.d2, y=coh.avg)) + geom_point() + xlab("SIPS D2: Bizarre Thinking") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+round(cor.test(chrdata$sips.d2, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.d2, chrdata$coh.avg)$p.value, digits=3)
+
+# ptotal corr
+ptotalcorr <- ggplot(chrdata, aes(x=sips.ptotal, y=coh.avg)) + geom_point() + xlab("SIPS Positive Total") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+round(cor.test(chrdata$sips.ptotal, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.ptotal, chrdata$coh.avg)$p.value, digits=3)
+
+# nottal corr
+ntotalcorr <- ggplot(chrdata, aes(x=sips.ntotal, y=coh.avg)) + geom_point() + xlab("SIPS Negative Total") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+round(cor.test(chrdata$sips.ntotal, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.ntotal, chrdata$coh.avg)$p.value, digits=3)
+
+# dtotal corr
+dtotalcorr <- ggplot(subset(chrdata, sips.d2 < 998.0), aes(x=sips.dtotal, y=coh.avg)) + geom_point() + xlab("SIPS Disorganized Total") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+round(cor.test(chrdata$sips.dtotal, chrdata$coh.avg)$estimate, digits=3)
+round(cor.test(chrdata$sips.dtotal, chrdata$coh.avg)$p.value, digits=3)
+
+grid.arrange(p5corr, ptotalcorr, n5corr, ntotalcorr, d2corr, dtotalcorr, nrow = 3)
+
+```
+
+### Question 3a: Correlations with Surface-Level Linguistic Factors
+
+```{r}
+# Sentence Length - sig correlation
+round(cor.test(data$wordspersent.avg, data$coh.avg)$estimate, digits=3)
+round(cor.test(data$wordspersent.avg, data$coh.avg)$p.value, digits=3)
+wordspersentcorr <- ggplot(data, aes(x=wordspersent.avg, y=coh.avg)) + geom_point() + xlab("Average Number of Words Per Sentence") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+
+rval <- round(cor.test(data$wordspersent.avg, data$coh.avg)$estimate, digits=3)
+pval <- round(cor.test(data$wordspersent.avg, data$coh.avg)$p.value, digits=10)
+# Note: I've hard-coded p < 0.001 here
+title <- paste0('R=', rval, ' (p<0.001)')
+ggplot(data, aes(x=wordspersent.avg, y=coh.avg, color=Group)) +
+  geom_point(size=3) + 
+  geom_smooth(method = "lm", se = TRUE, aes(group=1), color = "Black") +
+  labs(
+    x = "Average Sentence Length\n(in words)",
+    y = "Mean Coherence") +
+  ggtitle(title) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# MATTR - no correlation
+round(cor.test(data$MATTR.avg, data$coh.avg)$estimate, digits=3)
+round(cor.test(data$MATTR.avg, data$coh.avg)$p.value, digits=3)
+mattrcorr <- ggplot(data, aes(x=MATTR.avg, y=coh.avg)) + geom_point() + xlab("Lexical Diversity\n(Moving Average Type-to-Token Ratio)") + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE)
+
+rval <- round(cor.test(data$MATTR.avg, data$coh.avg)$estimate, digits=3)
+pval <- round(cor.test(data$MATTR.avg, data$coh.avg)$p.value, digits=3)
+title <- paste0('R=', rval, ' (p=', pval, ')')
+ggplot(data, aes(x=MATTR.avg, y=coh.avg, color=Group)) +
+  geom_point(size=3) + 
+  geom_smooth(method = "lm", se = TRUE, aes(group=1), color = "Black") +
+  labs(
+    x = "Lexical Diversity\n(Moving Average Type-to-Token Ratio)",
+    y = "Mean Coherence") +
+    ggtitle(title) +
+    theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+### Question 3a: Randomizing Words Simulations
+
+```{r, echo = FALSE, include = FALSE}
+# Read in data to get Monte Carlo difference distributions
+det <- read.delim("/Users/khit/Box Sync/Postdoc/Research/narratives_clean/results/nar_mainqonlywithfillers/nar_mainqonlywithfillers_glove_pos.csv",sep=",")
+mc <- read.delim("/Users/khit/Box Sync/Postdoc/Research/narratives_clean/results/nar_mainqonlywithfillers/nar_mainqonlywithfillers_glove_pos_randomwords.csv",sep=",")
+
+det <- det %>% group_by(Participant,Group) %>% summarize(meanCoh = mean(Coherence))
+det <- det %>% group_by(Group) %>% summarize(Coherence=mean(meanCoh))
+det <- spread(det, Group, Coherence)
+det$Diff <- det$hc - det$chr
+
+x <- mc %>% group_by(Participant,Group,Iteration) %>% summarize(meanCoh = mean(Coherence))
+x <- x %>% group_by(Iteration,Group) %>% summarize(Coherence=mean(meanCoh))
+x <- spread(x, Group, Coherence)
+x$Diff <- x$hc - x$chr
+mc <- x
+mc <- mc[order(-mc$Diff),]
+# kable(mc)
+p <- ggplot(mc, aes(x=Diff)) + 
+  geom_density() +
+  geom_vline(xintercept = det$Diff, colour="blue", linetype = "longdash", size = 1) +
+  xlab("HC-CHR Difference in Coherence") + ylab("Density")
+
+```
+
+### Question 3b: Correlations with Sociodemographic Factors (Continuous)
+
+```{r}
+# Function to calculate correlation
+get_correlation <- function(data, xvar, yvar, xlabel, ylabel, showgroups) {
+  rval <- round(cor.test(data[[xvar]], data[[yvar]])$estimate, digits=3)
+  pval <- round(cor.test(data[[xvar]], data[[yvar]])$p.value, digits=3)
+  title <- paste0('R=', rval, ' (p=', pval, ')')
+  if (showgroups == 1) {
+    corrplot <- ggplot(data, aes(x=data[[xvar]], y=data[[yvar]], color=Group)) + geom_point(size=2) + xlab(xlabel) + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE, aes(group=1), color = "Black") + ggtitle(title) + theme(plot.title = element_text(hjust = 0.5)) 
+  } else {
+    corrplot <- ggplot(data, aes(x=data[[xvar]], y=data[[yvar]])) + geom_point() + xlab(xlabel) + ylab("Mean Coherence") + geom_smooth(method = "lm", se = TRUE) + ggtitle(title) + theme(plot.title = element_text(hjust = 0.5))
+  }
+  
+  return(corrplot)
+}
+
+# Calculate correlations with continuous variables
+agecorr <- get_correlation(data, 'age', 'coh.avg', 'Age', 'Mean Coherence', 0)
+yearseducorr <- get_correlation(data, 'years_edu', 'coh.avg', 'Education Level', 'Mean Coherence', 0)
+wratcorr <- get_correlation(data, 'WRAT', 'coh.avg', 'WRAT', 'Mean Coherence', 1)
+```
+
+### Question 3b: Correlations with Sociodemographic Factors (Discrete)
+
+```{r}
+
+# Racial Identity
+data_race <- subset(data, race %in% c(5,8))
+data_race$race[data_race$race==5] <- 2
+data_race$race[data_race$race==8] <- 1
+
+data_race$race <- as.factor(data_race$race)
+data_race$Group <- as.factor(data_race$Group)
+p <- ggplot(data_race, aes(x=race, y=coh.avg, fill=Group, na.rm = TRUE)) +
+  geom_boxplot(alpha = .7, outlier.shape = NA) +
+  scale_fill_discrete(name = "Group", labels = c("CHR", "HC")) +
+  geom_point(position=position_jitterdodge()) +
+  stat_summary(fun.y="mean", geom="point", size=3,
+    position=position_dodge(width=0.75), color="white", show_guide=FALSE) +
+  scale_x_discrete(labels=c("White","Black")) +
+  labs(
+    x = "Race",
+    y = "Coherence"
+  )
+
+```
+
+### Question 3b: Regression - Sentence Length, WRAT, Racial Identiy
+
+```{r}
+data$GroupCode <- ifelse(data$Group=="hc",-.5, .5)
+data$RaceCode <- ifelse(data$race=='1',-.5,.5)
+
+data.lmer <- lm(coh.avg~WRAT+wordspersent.avg+RaceCode, data=data,
+                  control = lmerControl(optimizer = "bobyqa",optCtrl=list(maxfun=100000)),verbose = 2)
+
+summary(data.lmer)
+```
+
+
+
