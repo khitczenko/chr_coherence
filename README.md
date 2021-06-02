@@ -8,4 +8,4 @@ predict_next_sent_bert.py: Gets automated measures of coherence for speech sampl
 
 Note: some speech data and participant information is omitted for participant privacy.
 
-Please feel free to reach out to kasia.hitczenko@northwestern.edu with any questions!
+Please feel free to get in touch with any questions!
